@@ -12,17 +12,19 @@ import (
 )
 
 // интерфейс сервисного слоя
-type OrderProcessor interface {
+type OrderService interface {
 	ProcessNewOrder(ctx context.Context, order *models.Order) error
+	GetOrderByUID(ctx context.Context, orderUID string) (*models.Order, error)
+	PreloadCache(context.Context, int) error
 }
 
 type Consumer struct {
-	reader    *kafka.Reader
-	logger    *slog.Logger
-	processor OrderProcessor
+	reader  *kafka.Reader
+	logger  *slog.Logger
+	service OrderService
 }
 
-func NewConsumer(brokers []string, topic, groupID string, logger *slog.Logger, processor OrderProcessor) *Consumer {
+func NewConsumer(brokers []string, topic, groupID string, logger *slog.Logger, service OrderService) *Consumer {
 	reader := kafka.NewReader(kafka.ReaderConfig{
 		Brokers:  brokers,
 		GroupID:  groupID,
@@ -33,9 +35,9 @@ func NewConsumer(brokers []string, topic, groupID string, logger *slog.Logger, p
 	})
 
 	return &Consumer{
-		reader:    reader,
-		logger:    logger,
-		processor: processor,
+		reader:  reader,
+		logger:  logger,
+		service: service,
 	}
 }
 
@@ -90,7 +92,7 @@ func (c Consumer) processMessage(ctx context.Context, msg kafka.Message) error {
 	var order models.Order
 
 	if err := json.Unmarshal(msg.Value, &order); err != nil {
-		//если JSON сломанный, то retry не поможет, значит логгируем, прокидываем nil, чтобы осуществить коммит
+		//если JSON сломанный, то retry не поможет, значит логгируем об ошибке и прокидываем nil, чтобы осуществить коммит
 		c.logger.Error("invalid json, skipping",
 			slog.Any("error", err),
 			slog.Int("partition", msg.Partition),
@@ -115,7 +117,7 @@ func (c Consumer) processMessage(ctx context.Context, msg kafka.Message) error {
 
 	log.Info("processing new order")
 
-	if err := c.processor.ProcessNewOrder(ctx, &order); err != nil {
+	if err := c.service.ProcessNewOrder(ctx, &order); err != nil {
 		return fmt.Errorf("%s: failed to process order: %w", op, err)
 	}
 
