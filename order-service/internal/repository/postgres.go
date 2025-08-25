@@ -27,7 +27,11 @@ func (r *PostgresRepository) SaveOrder(ctx context.Context, order *models.Order)
 
 	queryOrder := `INSERT INTO orders
 		(order_uid, track_number, entry, locale, internal_signature, customer_id, delivery_service, shardkey, sm_id, date_created, oof_shard)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		ON CONFLICT (order_uid) DO UPDATE SET 
+			track_number = EXCLUDED.track_number,
+			date_created = EXCLUDED.date_created,
+			customer_id = EXCLUDED.customer_id`
 
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
@@ -56,7 +60,9 @@ func (r *PostgresRepository) SaveOrder(ctx context.Context, order *models.Order)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
 		ON CONFLICT (order_id) DO UPDATE SET
 			amount = EXCLUDED.amount,
-			payment_dt = EXCLUDED.payment_dt`
+			payment_dt = EXCLUDED.payment_dt,
+			delivery_cost = EXCLUDED.delivery_cost,
+			goods_total = EXCLUDED.goods_total`
 
 	_, err = tx.Exec(ctx, queryPayments,
 		order.OrderUID,
@@ -97,6 +103,10 @@ func (r *PostgresRepository) SaveOrder(ctx context.Context, order *models.Order)
 		return fmt.Errorf("%s: insert delivery %w", op, err)
 	}
 
+	_, err = r.db.Exec(ctx, "DELETE FROM items WHERE order_id = $1", order.OrderUID)
+	if err != nil {
+		return fmt.Errorf("%s: delete old items %w", op, err)
+	}
 	queryItem := `INSERT INTO items
 		(order_id, chrt_id, track_number, price, rid, name, sale, size, total_price, nm_id, brand, status)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`
@@ -123,11 +133,7 @@ func (r *PostgresRepository) SaveOrder(ctx context.Context, order *models.Order)
 
 	}
 
-	if err = tx.Commit(ctx); err != nil {
-		return fmt.Errorf("%s: commit transaction: %w", op, err)
-	}
-
-	return nil
+	return tx.Commit(ctx)
 }
 
 // GetOrderByUID - ищет в бд заказ по UID и возвращает всю структуру заказа
@@ -141,8 +147,8 @@ func (r *PostgresRepository) GetOrderByUID(ctx context.Context, orderUID string)
 			p.transaction, p.request_id, p.currency, p.provider, p.amount, p.payment_dt, 
 			p.bank, p.delivery_cost, p.goods_total, p.custom_fee
 		FROM orders o
-		JOIN delivery d ON o.order_uid = d.order_uid
-		JOIN payments p ON o.order_uid = p.order_uid
+		JOIN delivery d ON o.order_uid = d.order_id
+		JOIN payments p ON o.order_uid = p.order_id
 		WHERE o.order_uid = $1`
 
 	var order models.Order
@@ -166,7 +172,7 @@ func (r *PostgresRepository) GetOrderByUID(ctx context.Context, orderUID string)
 	queryItems := `SELECT 
 		chrt_id, track_number, price, rid, name, sale, size, total_price, nm_id, brand, status
 		FROM items
-		WHERE order_uid = $1`
+		WHERE order_id = $1`
 
 	rows, err := r.db.Query(ctx, queryItems, orderUID)
 	if err != nil {
@@ -203,8 +209,8 @@ func (r *PostgresRepository) GetLastNOrders(ctx context.Context, numOrders int) 
         p.transaction, p.request_id, p.currency, p.provider, p.amount, 
         p.payment_dt, p.bank, p.delivery_cost, p.goods_total, p.custom_fee
 		FROM orders o
-		LEFT JOIN delivery d ON o.order_uid = d.order_uid
-		LEFT JOIN payments p ON o.order_uid = p.order_uid
+		LEFT JOIN delivery d ON o.order_uid = d.order_id
+		LEFT JOIN payments p ON o.order_uid = p.order_id
 		ORDER BY o.date_created DESC
 		LIMIT $1`
 
@@ -249,7 +255,7 @@ func (r *PostgresRepository) GetLastNOrders(ctx context.Context, numOrders int) 
 
 	queryItems := `
         SELECT 
-            order_uid, chrt_id, track_number, price, rid, name, 
+            order_id, chrt_id, track_number, price, rid, name, 
             sale, size, total_price, nm_id, brand, status
         FROM items
         WHERE order_id = ANY($1)`
