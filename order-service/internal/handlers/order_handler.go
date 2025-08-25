@@ -48,7 +48,7 @@ func (h *Handler) GetOrderByUID(c *gin.Context) {
 	order, err := h.service.GetOrderByUID(c.Request.Context(), orderUID)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
-			log.With("order not found")
+			log.Warn("order not found")
 			c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
 			return
 		}
