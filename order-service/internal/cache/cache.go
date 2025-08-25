@@ -46,7 +46,7 @@ func (c *LRUCache) Set(order *models.Order) {
 	}
 
 	//добавляем новый элемент в начало списка и в мапу
-	newItem := cacheItem{
+	newItem := &cacheItem{
 		key:   order.OrderUID,
 		order: order,
 	}
