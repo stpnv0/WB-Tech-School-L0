@@ -24,14 +24,14 @@ type Consumer struct {
 	service OrderService
 }
 
-func NewConsumer(brokers []string, topic, groupID string, logger *slog.Logger, service OrderService) *Consumer {
+func NewConsumer(brokers []string, topic, groupID string, MinBytes, MaxBytes int, MaxWait time.Duration, logger *slog.Logger, service OrderService) *Consumer {
 	reader := kafka.NewReader(kafka.ReaderConfig{
 		Brokers:  brokers,
 		GroupID:  groupID,
 		Topic:    topic,
-		MinBytes: 10e3,
-		MaxBytes: 10e6,
-		MaxWait:  500 * time.Millisecond,
+		MinBytes: MinBytes,
+		MaxBytes: MaxBytes,
+		MaxWait:  MaxWait,
 	})
 
 	return &Consumer{
@@ -42,7 +42,8 @@ func NewConsumer(brokers []string, topic, groupID string, logger *slog.Logger, s
 }
 
 // Start - запускает бесконечный цикл чтения сообщений из топика
-func (c Consumer) Start(ctx context.Context) {
+func (c *Consumer) Start(ctx context.Context) {
+	defer c.reader.Close()
 	c.logger.Info("Kafka consumer started",
 		slog.String("topic", c.reader.Config().Topic),
 		slog.String("group", c.reader.Config().GroupID),
@@ -86,7 +87,7 @@ func (c Consumer) Start(ctx context.Context) {
 }
 
 // processMessage - инкапсулирует логику парсинга, валидции и передачи msg в сервис
-func (c Consumer) processMessage(ctx context.Context, msg kafka.Message) error {
+func (c *Consumer) processMessage(ctx context.Context, msg kafka.Message) error {
 	const op = "kafka.processMessage"
 
 	var order models.Order
@@ -112,6 +113,18 @@ func (c Consumer) processMessage(ctx context.Context, msg kafka.Message) error {
 	//валидация данных (можно добавить больше проверок)
 	if order.OrderUID == "" {
 		log.Error("invalid order data: order_uid is empty, skipping")
+		return nil
+	}
+	if order.Payment.Amount < 0 {
+		log.Error("invalid order data: payment amount is negative, skipping")
+		return nil
+	}
+	if order.DateCreated.IsZero() {
+		log.Error("invalid order data: order date_created is zero, skipping")
+		return nil
+	}
+	if order.OrderUID != order.Payment.Transaction {
+		log.Error("invalid order data: order_uid != payment transaction, skipping")
 		return nil
 	}
 
