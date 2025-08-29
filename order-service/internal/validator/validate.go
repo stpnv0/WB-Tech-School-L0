@@ -14,6 +14,7 @@ var ErrBadMessage = errors.New("bad_message")
 func Validate(log *slog.Logger, o *models.Order) error {
 	var errs []string
 	validateOrder(&errs, o)
+	validateDelivery(&errs, &o.Delivery)
 	validatePayment(&errs, &o.Payment, o)
 	validateItems(&errs, o)
 
