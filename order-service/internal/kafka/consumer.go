@@ -8,6 +8,7 @@ import (
 	"github.com/segmentio/kafka-go"
 	"log/slog"
 	"order-service/internal/models"
+	"order-service/internal/validator"
 	"time"
 )
 
@@ -110,24 +111,14 @@ func (c *Consumer) processMessage(ctx context.Context, msg kafka.Message) error 
 		slog.String("operation", op),
 	)
 
-	//валидация данных (можно добавить больше проверок)
-	if order.OrderUID == "" {
-		log.Error("invalid order data: order_uid is empty, skipping")
-		return nil
+	//валидация данных
+	if err := validator.Validate(log, &order); err != nil {
+		if errors.Is(err, validator.ErrBadMessage) {
+			// Данные плохие — лог уже записан => следует коммитить
+			return nil
+		}
+		return err
 	}
-	if order.Payment.Amount < 0 {
-		log.Error("invalid order data: payment amount is negative, skipping")
-		return nil
-	}
-	if order.DateCreated.IsZero() {
-		log.Error("invalid order data: order date_created is zero, skipping")
-		return nil
-	}
-	if order.OrderUID != order.Payment.Transaction {
-		log.Error("invalid order data: order_uid != payment transaction, skipping")
-		return nil
-	}
-
 	log.Info("processing new order")
 
 	if err := c.service.ProcessNewOrder(ctx, &order); err != nil {
