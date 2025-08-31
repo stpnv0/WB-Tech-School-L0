@@ -38,6 +38,8 @@ type KafkaConfig struct {
 	MinBytes int           `env:"KAFKA_MIN_BYTES"`
 	MaxBytes int           `env:"KAFKA_MAX_BYTES"`
 	MaxWait  time.Duration `env:"KAFKA_MAX_WAIT"`
+	Timeout  time.Duration `env:"KAFKA_TIMEOUT"`
+	DLQTopic string        `env:"KAFKA_DLQ_TOPIC"`
 }
 
 func MustLoad() *Config {

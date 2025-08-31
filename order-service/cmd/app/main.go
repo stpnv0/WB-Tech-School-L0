@@ -40,6 +40,9 @@ func main() {
 		logger.Error("Failed to preload cache", slog.Any("error", err))
 	}
 
+	kafkaProducer := kafka.NewProducer(cfg.Kafka.Brokers, cfg.Kafka.Timeout, logger)
+	defer kafkaProducer.Close()
+
 	kafkaConsumer := kafka.NewConsumer(
 		cfg.Kafka.Brokers,
 		cfg.Kafka.Topic,
@@ -49,6 +52,8 @@ func main() {
 		cfg.Kafka.MaxWait,
 		logger,
 		orderService,
+		cfg.Kafka.DLQTopic,
+		kafkaProducer,
 	)
 
 	handler := handlers.NewHandler(orderService, logger)
@@ -64,7 +69,7 @@ func main() {
 
 	go func() {
 		logger.Info("Starting HTTP server", slog.String("address", cfg.HTTPServer.Address))
-		if err := r.Run(cfg.HTTPServer.Address); err != nil {
+		if err = r.Run(cfg.HTTPServer.Address); err != nil {
 			logger.Error("HTTP server error", slog.Any("error", err))
 			cancel()
 		}

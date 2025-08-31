@@ -9,36 +9,56 @@ import (
 	"log/slog"
 	"order-service/internal/models"
 	"order-service/internal/validator"
+	"strconv"
 	"time"
 )
 
 // интерфейс сервисного слоя
 type OrderService interface {
-	ProcessNewOrder(ctx context.Context, order *models.Order) error
-	GetOrderByUID(ctx context.Context, orderUID string) (*models.Order, error)
+	ProcessNewOrder(context.Context, *models.Order) error
+	GetOrderByUID(context.Context, string) (*models.Order, error)
 	PreloadCache(context.Context, int) error
 }
 
-type Consumer struct {
-	reader  *kafka.Reader
-	logger  *slog.Logger
-	service OrderService
+type DLQProducer interface {
+	SendMessage(ctx context.Context, topic string, key, value []byte, headers map[string]string) error
 }
 
-func NewConsumer(brokers []string, topic, groupID string, MinBytes, MaxBytes int, MaxWait time.Duration, logger *slog.Logger, service OrderService) *Consumer {
+type Consumer struct {
+	reader      *kafka.Reader
+	logger      *slog.Logger
+	service     OrderService
+	dlqProducer DLQProducer
+	dlqTopic    string
+}
+
+func NewConsumer(
+	brokers []string,
+	topic, groupID string,
+	MinBytes, MaxBytes int,
+	MaxWait time.Duration,
+	logger *slog.Logger,
+	service OrderService,
+	dlqTopic string,
+	dlqProducer DLQProducer,
+) *Consumer {
 	reader := kafka.NewReader(kafka.ReaderConfig{
-		Brokers:  brokers,
-		GroupID:  groupID,
-		Topic:    topic,
-		MinBytes: MinBytes,
-		MaxBytes: MaxBytes,
-		MaxWait:  MaxWait,
+		Brokers:        brokers,
+		GroupID:        groupID,
+		Topic:          topic,
+		MinBytes:       MinBytes,
+		MaxBytes:       MaxBytes,
+		MaxWait:        MaxWait,
+		StartOffset:    kafka.FirstOffset,
+		CommitInterval: 0,
 	})
 
 	return &Consumer{
-		reader:  reader,
-		logger:  logger,
-		service: service,
+		reader:      reader,
+		logger:      logger,
+		service:     service,
+		dlqTopic:    dlqTopic,
+		dlqProducer: dlqProducer,
 	}
 }
 
@@ -94,13 +114,26 @@ func (c *Consumer) processMessage(ctx context.Context, msg kafka.Message) error 
 	var order models.Order
 
 	if err := json.Unmarshal(msg.Value, &order); err != nil {
-		//если JSON сломанный, то retry не поможет, значит логгируем об ошибке и прокидываем nil, чтобы осуществить коммит
 		c.logger.Error("invalid json, skipping",
 			slog.Any("error", err),
 			slog.Int("partition", msg.Partition),
 			slog.Int64("offset", msg.Offset),
 			slog.String("operation", op),
 		)
+
+		//формируем headers для отправки сообщения в DLQ
+		headers := map[string]string{
+			"error_reason":    "json_unmarshal_failed",
+			"error_details":   err.Error(),
+			"original_topic":  msg.Topic,
+			"original_offset": strconv.FormatInt(msg.Offset, 10),
+		}
+
+		if errDLQ := c.dlqProducer.SendMessage(ctx, c.dlqTopic, msg.Key, msg.Value, headers); errDLQ != nil {
+			// Возвращаем ошибку, чтобы сообщение не было закоммичено
+			c.logger.Error("CRITICAL: FAILED TO SEND MESSAGE TO DLQ", slog.Any("dlq_error", errDLQ))
+			return fmt.Errorf("failed to send to DLQ: %w", errDLQ)
+		}
 		return nil
 	}
 
@@ -114,16 +147,27 @@ func (c *Consumer) processMessage(ctx context.Context, msg kafka.Message) error 
 	//валидация данных
 	if err := validator.Validate(log, &order); err != nil {
 		if errors.Is(err, validator.ErrBadMessage) {
-			// Данные плохие — лог уже записан => следует коммитить
-			return nil
+			headers := map[string]string{
+				"error_reason":    "validation_failed",
+				"error_details":   err.Error(),
+				"original_topic":  msg.Topic,
+				"original_offset": strconv.FormatInt(msg.Offset, 10),
+			}
+
+			if errDLQ := c.dlqProducer.SendMessage(ctx, c.dlqTopic, msg.Key, msg.Value, headers); errDLQ != nil {
+				c.logger.Error("CRITICAL: FAILED TO SEND MESSAGE TO DLQ", slog.Any("dlq_error", errDLQ))
+				return fmt.Errorf("failed to send to DLQ: %w", errDLQ)
+			}
 		}
-		return err
+		return nil
 	}
-	log.Info("processing new order")
+	log.Debug("processing new order")
 
 	if err := c.service.ProcessNewOrder(ctx, &order); err != nil {
+		// Тут не стоит сразу отправлять в DLQ, потому что может быть временная ошибка (например, бд недоступна)
 		return fmt.Errorf("%s: failed to process order: %w", op, err)
 	}
+	log.Debug("order processed successfully")
 
 	return nil
 }
