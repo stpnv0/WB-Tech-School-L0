@@ -37,8 +37,8 @@
 
 4.  **Отправьте тестовые сообщения в kafka через скрипт - будет отправлено 4 сообщения: 2 валидных(b563feb7b2b84b6test, ok_multi_items_1), 2 невалидных (mismatch_tx, bad_json):**
     ```bash
-    chmod +x scripts/publish_samples_simple.sh
-    ./scripts/publish_samples_simple.sh
+    chmod +x scripts/send_test_orders.sh
+    ./scripts/send_test_orders.sh
     ```
 5. **Зайдите на UI (http://localhost:8081) и введите order_uid из скрипта, например:** 
     ```
