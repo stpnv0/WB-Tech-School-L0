@@ -1,7 +1,5 @@
 FROM golang:1.24-alpine AS builder
 
-RUN apk add --no-cache git
-
 WORKDIR /app
 
 COPY go.mod go.sum ./
@@ -20,8 +18,6 @@ WORKDIR /root/
 COPY --from=builder /app/main .
 
 COPY --from=builder /app/web ./web
-
-COPY --from=builder /app/migrations ./migrations
 
 EXPOSE 8081
 
