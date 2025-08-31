@@ -22,16 +22,14 @@ func NewPostgresRepository(db *pgxpool.Pool) *PostgresRepository {
 }
 
 // SaveOrder - в рамках одной транзакции вставляет в бд всю информацию о заказе
+// В случае конфликта мы ничего не обновляем, потому что в задаче не указано какие поля можно менять, а какие неизменны
 func (r *PostgresRepository) SaveOrder(ctx context.Context, order *models.Order) error {
 	const op = "PostgresRepository.SaveOrder"
 
 	queryOrder := `INSERT INTO orders
 		(order_uid, track_number, entry, locale, internal_signature, customer_id, delivery_service, shardkey, sm_id, date_created, oof_shard)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-		ON CONFLICT (order_uid) DO UPDATE SET 
-			track_number = EXCLUDED.track_number,
-			date_created = EXCLUDED.date_created,
-			customer_id = EXCLUDED.customer_id`
+		ON CONFLICT (order_uid) DO NOTHING`
 
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
@@ -58,11 +56,7 @@ func (r *PostgresRepository) SaveOrder(ctx context.Context, order *models.Order)
 	queryPayments := `INSERT INTO payments
 		(order_id, transaction, request_id, currency, provider, amount,payment_dt, bank, delivery_cost, goods_total, custom_fee)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-		ON CONFLICT (order_id) DO UPDATE SET
-			amount = EXCLUDED.amount,
-			payment_dt = EXCLUDED.payment_dt,
-			delivery_cost = EXCLUDED.delivery_cost,
-			goods_total = EXCLUDED.goods_total`
+		ON CONFLICT (order_id) DO NOTHING`
 
 	_, err = tx.Exec(ctx, queryPayments,
 		order.OrderUID,
@@ -84,10 +78,7 @@ func (r *PostgresRepository) SaveOrder(ctx context.Context, order *models.Order)
 	queryDelivery := `INSERT INTO delivery
 		(order_id, name, phone, zip, city, address, region, email)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-		ON CONFLICT (order_id) DO UPDATE SET
-			name = EXCLUDED.name,
-			phone = EXCLUDED.phone,
-			address = EXCLUDED.address`
+		ON CONFLICT (order_id) DO NOTHING`
 
 	_, err = tx.Exec(ctx, queryDelivery,
 		order.OrderUID,
@@ -103,10 +94,6 @@ func (r *PostgresRepository) SaveOrder(ctx context.Context, order *models.Order)
 		return fmt.Errorf("%s: insert delivery %w", op, err)
 	}
 
-	_, err = r.db.Exec(ctx, "DELETE FROM items WHERE order_id = $1", order.OrderUID)
-	if err != nil {
-		return fmt.Errorf("%s: delete old items %w", op, err)
-	}
 	queryItem := `INSERT INTO items
 		(order_id, chrt_id, track_number, price, rid, name, sale, size, total_price, nm_id, brand, status)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`
