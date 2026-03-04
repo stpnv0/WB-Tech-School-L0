@@ -5,12 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/segmentio/kafka-go"
 	"log/slog"
 	"order-service/internal/models"
 	"order-service/internal/validator"
 	"strconv"
 	"time"
+
+	"github.com/segmentio/kafka-go"
 )
 
 // интерфейс сервисного слоя

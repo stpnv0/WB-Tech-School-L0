@@ -2,9 +2,10 @@ package config
 
 import (
 	"fmt"
+	"time"
+
 	"github.com/ilyakaznacheev/cleanenv"
 	"github.com/joho/godotenv"
-	"time"
 )
 
 type Config struct {

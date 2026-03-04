@@ -3,9 +3,10 @@ package kafka
 import (
 	"context"
 	"fmt"
-	"github.com/segmentio/kafka-go"
 	"log/slog"
 	"time"
+
+	"github.com/segmentio/kafka-go"
 )
 
 type Producer struct {

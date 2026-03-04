@@ -1,8 +1,9 @@
 package router
 
 import (
-	"github.com/gin-gonic/gin"
 	"order-service/internal/handlers"
+
+	"github.com/gin-gonic/gin"
 )
 
 func InitRouter(orderHandler *handlers.Handler) *gin.Engine {
