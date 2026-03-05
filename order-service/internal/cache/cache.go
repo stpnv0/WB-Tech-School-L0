@@ -74,7 +74,7 @@ func (c *LRUCache) LoadBatch(orders []*models.Order) {
 	defer c.mu.Unlock()
 
 	//очищаем на всякий случай старый кеш
-	c.cache = make(map[string]*list.Element)
+	c.cache = make(map[string]*list.Element, len(orders))
 	c.lru = list.New()
 
 	// Загружаем новые данные (до capacity)
