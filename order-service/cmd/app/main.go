@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"log/slog"
 	"order-service/internal/cache"
 	"order-service/internal/config"
@@ -15,6 +14,8 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func main() {
@@ -22,7 +23,8 @@ func main() {
 	cfg := config.MustLoad()
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-
+	startDebugServer(logger)
+	
 	dbPool, err := initDB(cfg, logger)
 	if err != nil {
 		logger.Error("Failed to connect to database", slog.Any("error", err))
@@ -96,6 +98,7 @@ func initDB(cfg *config.Config, logger *slog.Logger) (*pgxpool.Pool, error) {
 	if err != nil {
 		return nil, err
 	}
+	poolConfig.MaxConns = cfg.Postgres.MaxConns
 
 	ctx := context.Background()
 	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)

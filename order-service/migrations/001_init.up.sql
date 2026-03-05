@@ -52,3 +52,5 @@ CREATE TABLE IF NOT EXISTS items (
     brand        VARCHAR(255),
     status       INTEGER
 );
+
+CREATE INDEX IF NOT EXISTS idx_items_order_id ON items(order_id);
