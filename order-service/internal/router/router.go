@@ -7,7 +7,8 @@ import (
 )
 
 func InitRouter(orderHandler *handlers.Handler) *gin.Engine {
-	router := gin.Default()
+	router := gin.New()
+	router.Use(gin.Recovery())
 
 	order := router.Group("/order")
 	{
