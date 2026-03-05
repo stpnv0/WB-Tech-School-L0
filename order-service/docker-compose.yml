@@ -6,7 +6,7 @@ services:
       POSTGRES_PASSWORD: password
       POSTGRES_DB: orders_db
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./migrations/001_init.up.sql:/docker-entrypoint-initdb.d/001_init.sql
@@ -67,6 +67,7 @@ services:
         condition: service_healthy
     ports:
       - "8081:8081"
+      - "6060:6060"
     env_file: .env
 
 volumes:
