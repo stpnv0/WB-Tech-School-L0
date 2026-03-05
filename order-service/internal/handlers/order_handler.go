@@ -9,6 +9,7 @@ import (
 	"order-service/internal/repository"
 
 	"github.com/gin-gonic/gin"
+	gojson "github.com/goccy/go-json"
 )
 
 type OrderService interface {
@@ -40,23 +41,29 @@ func (h *Handler) GetOrderByUID(c *gin.Context) {
 		return
 	}
 
-	log := h.log.With(
-		slog.String("op", op),
-		slog.String("order_uid", orderUID),
-	)
-
 	order, err := h.service.GetOrderByUID(c.Request.Context(), orderUID)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
-			log.Warn("order not found")
 			c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
 			return
 		}
 
-		log.Error("failed to get order", slog.Any("error", err))
+		h.log.Error("failed to get order",
+			slog.String("op", op),
+			slog.String("order_uid", orderUID),
+			slog.Any("error", err),
+		)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
 		return
 	}
 
-	c.JSON(http.StatusOK, order)
+	c.Status(http.StatusOK)
+	c.Header("Content-Type", "application/json; charset=utf-8")
+	encoder := gojson.NewEncoder(c.Writer)
+	if err := encoder.Encode(order); err != nil {
+		h.log.Error("failed to encode order",
+			slog.String("op", op),
+			slog.Any("error", err),
+		)
+	}
 }

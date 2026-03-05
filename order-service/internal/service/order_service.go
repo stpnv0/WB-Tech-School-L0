@@ -57,28 +57,28 @@ func (s *OrderService) ProcessNewOrder(ctx context.Context, order *models.Order)
 
 func (s *OrderService) GetOrderByUID(ctx context.Context, orderUID string) (*models.Order, error) {
 	const op = "OrderService.GetOrderByUID"
-	log := s.log.With(
-		slog.String("op", op),
-		slog.String("order_uid", orderUID),
-	)
 
 	if order, ok := s.cache.Get(orderUID); ok {
-		log.Info("order found in cache (cache hit)")
 		return order, nil
 	}
 
-	log.Info("order not found in cache (cache miss), fetching from repository")
 	order, err := s.db.GetOrderByUID(ctx, orderUID)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
-			log.Warn("order not found in repository")
+			s.log.Warn("order not found in repository",
+				slog.String("op", op),
+				slog.String("order_uid", orderUID),
+			)
 		} else {
-			log.Error("failed to get order from repository", slog.Any("error", err))
+			s.log.Error("failed to get order from repository",
+				slog.String("op", op),
+				slog.String("order_uid", orderUID),
+				slog.Any("error", err),
+			)
 		}
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
-	log.Info("order found in repository, updating cache")
 	if order != nil {
 		s.cache.Set(order)
 	}
